@@ -21,11 +21,15 @@ CmdParser cmdParser;
 #define TEMP_1 A5
 #define TEMP_2 A4
 
-#define ERROR_SERIAL_TIMEOUT -1
-#define ERROR_SERIAL_PARSER -2
-#define ERROR_IP -3
+#define ERROR_SERIAL_PARSER -1
 
 String IP = "0001";
+
+int previous_state = 0;
+int current_state  = 0;
+long int timer_a        = 0;
+long int timer_b        = 0;
+int autoPowerOn = 1;
 
 void checkCommand(void);
 
@@ -34,6 +38,8 @@ void reportERROR(int err);
 void bluetoothState(String state);
 void audioState(String state);
 void powerState(String state);
+void autoPowerAudio(void);
+void powerUpAudio(void);
 
 void setup() {
     Serial.begin(115200);
@@ -50,10 +56,46 @@ void setup() {
     digitalWrite(POWER_BT, LOW);
 
     cmdParser.setOptKeyValue(true);
+
+    attachInterrupt(digitalPinToInterrupt(POWER_UP_INT), powerUpAudio, RISING);
 }
 
 void loop() {
     checkCommand();
+    autoPowerAudio();
+    timer_b = millis();
+    if ((timer_b - timer_a) > 10000) {
+        int __state = digitalRead(POWER_UP_INT);
+        if (__state == HIGH) {
+            timer_a = millis();
+        } else {
+            previous_state = 1;
+        }
+    }
+
+    if (((timer_b - timer_a) > 20000) && previous_state) {
+        int __state = digitalRead(POWER_UP_INT);
+        if (__state == HIGH) {
+            timer_a = millis();
+        } else {
+            current_state = 1;
+        }
+    }
+}
+
+void powerUpAudio(void) {
+    digitalWrite(POWER_RELAY, HIGH);
+}
+
+void autoPowerAudio(void) {
+    if (autoPowerOn) {
+        if (current_state && previous_state) {
+            digitalWrite(POWER_RELAY, LOW);
+
+            current_state  = 0;
+            previous_state = 0;
+        }
+    }
 }
 
 void checkCommand(void) {
@@ -68,8 +110,6 @@ void checkCommand(void) {
                     bluetoothState(cmdParser.getValueFromKey_P(PSTR("BLUETOOTH")));
                     audioState(cmdParser.getValueFromKey_P(PSTR("AUDIO_OUTPUT")));
                     powerState(cmdParser.getValueFromKey_P(PSTR("POWER")));
-                } else {
-                    reportERROR(ERROR_IP);
                 }
             }
             /*
@@ -79,7 +119,6 @@ void checkCommand(void) {
             if (cmdParser.equalCommand_P(PSTR("GET"))) {
                 String ip = cmdParser.getValueFromKey_P(PSTR("IP"));
                 if (ip == IP) {
-
                     int bt_state = digitalRead(POWER_BT);
                     int ssa      = digitalRead(SOUND_SELECTION_A);
                     int ssb      = digitalRead(SOUND_SELECTION_B);
@@ -90,8 +129,22 @@ void checkCommand(void) {
                     String __to = cmdParser.getValueFromKey_P(PSTR("TO"));
                     String reply = "MASTER IP=\"0000\" FROM=\"" + IP + "\" BLUETOOTH=\"" + bt_state + "\" SOUND_SELECTION_A=\"" + ssa + "\" SOUND_SELECTION_B=\"" + ssb + "\" POWER=\"" + power + "\" TEMP_1=\"" + temp_a + "\" TEMP_2=\"" + temp_b + "\"";
                     Serial.println(reply);
-                } else {
-                    reportERROR(ERROR_IP);
+                }
+            }
+
+            if (cmdParser.equalCommand_P(PSTR("DEBUG"))) {
+                String ip = cmdParser.getValueFromKey_P(PSTR("IP"));
+                if (ip == IP) {
+                    int bt_state = digitalRead(POWER_BT);
+                    int ssa      = digitalRead(SOUND_SELECTION_A);
+                    int ssb      = digitalRead(SOUND_SELECTION_B);
+                    int power    = digitalRead(POWER_RELAY);
+                    int temp_a   = analogRead(TEMP_1);
+                    int temp_b   = analogRead(TEMP_2);
+
+                    String __to = cmdParser.getValueFromKey_P(PSTR("TO"));
+                    String reply = "MASTER IP=\"0000\" FROM=\"" + IP + "\" BLUETOOTH=\"" + bt_state + "\" SOUND_SELECTION_A=\"" + ssa + "\" SOUND_SELECTION_B=\"" + ssb + "\" POWER=\"" + power + "\" TEMP_1=\"" + temp_a + "\" TEMP_2=\"" + temp_b + "\"";
+                    Serial.println(reply);
                 }
             }
         } else {
@@ -135,9 +188,11 @@ void audioState(String state) {
 void powerState(String state) {
     if (state == "on") {
         digitalWrite(POWER_RELAY, HIGH);
+        autoPowerOn = 0;
     } else if (state == "auto") {
-
+        autoPowerOn = 1;
     } else {
         digitalWrite(POWER_RELAY, LOW);
+        autoPowerOn = 0;
     }
 }
