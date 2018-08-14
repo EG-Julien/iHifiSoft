@@ -1,23 +1,24 @@
 /** IDE ONLY **/
 
-#include <Arduino.h>
+#include <Arduino.h>/*
 #include <CmdParser/src/CmdParser.hpp>
 #include <CmdParser/src/CmdBuffer.hpp>
-#include "CmdParser/src/CmdParser.hpp"
+#include "CmdParser/src/CmdParser.hpp"*/
 
 /** END IDE ONLY **/
 
 #include <CmdParser.hpp>
 #include <CmdBuffer.hpp>
 
-CmdBuffer<64> cmdBuffer;
+CmdBuffer<128> cmdBuffer;
 CmdParser cmdParser;
 
 #define SOUND_SELECTION_A 6
 #define SOUND_SELECTION_B 7
 #define POWER_RELAY 8
 #define POWER_BT 3
-#define POWER_UP_INT 2
+#define POWER_UP_INT_A 2
+#define POWER_UP_INT_B 5
 #define TEMP_1 A5
 #define TEMP_2 A4
 
@@ -25,11 +26,7 @@ CmdParser cmdParser;
 
 String IP = "0001";
 
-int previous_state = 0;
-int current_state  = 0;
-long int timer_a        = 0;
-long int timer_b        = 0;
-int autoPowerOn = 1;
+int x, y, k, autoPowerOn = 1, previousState = 0;
 
 void checkCommand(void);
 
@@ -38,8 +35,9 @@ void reportERROR(int err);
 void bluetoothState(String state);
 void audioState(String state);
 void powerState(String state);
-void autoPowerAudio(void);
 void powerUpAudio(void);
+void powerDownAudio(void);
+
 
 void setup() {
     Serial.begin(115200);
@@ -48,7 +46,8 @@ void setup() {
     pinMode(SOUND_SELECTION_B, OUTPUT);
     pinMode(POWER_RELAY, OUTPUT);
     pinMode(POWER_BT, OUTPUT);
-    pinMode(POWER_UP_INT, INPUT);
+    pinMode(POWER_UP_INT_A, INPUT);
+    pinMode(POWER_UP_INT_B, INPUT);
 
     digitalWrite(SOUND_SELECTION_A, LOW);
     digitalWrite(SOUND_SELECTION_B, LOW);
@@ -56,29 +55,48 @@ void setup() {
     digitalWrite(POWER_BT, LOW);
 
     cmdParser.setOptKeyValue(true);
-
-    attachInterrupt(digitalPinToInterrupt(POWER_UP_INT), powerUpAudio, RISING);
 }
 
 void loop() {
     checkCommand();
-    autoPowerAudio();
-    timer_b = millis();
-    if ((timer_b - timer_a) > 10000) {
-        int __state = digitalRead(POWER_UP_INT);
-        if (__state == HIGH) {
-            timer_a = millis();
-        } else {
-            previous_state = 1;
-        }
-    }
+    x = 0; y = 0;
 
-    if (((timer_b - timer_a) > 20000) && previous_state) {
-        int __state = digitalRead(POWER_UP_INT);
-        if (__state == HIGH) {
-            timer_a = millis();
+    if (autoPowerOn == 1) {
+
+        for (k = 0; k < 30; k++) {
+            x += digitalRead(POWER_UP_INT_A);
+            y += digitalRead(POWER_UP_INT_B);
+
+            delay(5);
+        }
+
+        Serial.print(x);
+        Serial.print("   ");
+        Serial.println(y);
+
+        if (x >= 5 || y >= 5) {
+            previousState = 0;
+            powerDownAudio();
+            if (x >= 5 && y >= 5) {
+                digitalWrite(SOUND_SELECTION_A, HIGH);
+                digitalWrite(SOUND_SELECTION_B, LOW);
+            } else {
+                if (x >= 5) {
+                    digitalWrite(SOUND_SELECTION_A, HIGH);
+                    digitalWrite(SOUND_SELECTION_B, LOW);
+                }
+                if (y >= 5) {
+                    digitalWrite(SOUND_SELECTION_A, LOW);
+                    digitalWrite(SOUND_SELECTION_B, LOW);
+                }
+            }
+            powerUpAudio();
         } else {
-            current_state = 1;
+            previousState += 1;
+            if (previousState > 200) {
+                powerDownAudio();
+                previousState = 0;
+            }
         }
     }
 }
@@ -87,19 +105,12 @@ void powerUpAudio(void) {
     digitalWrite(POWER_RELAY, HIGH);
 }
 
-void autoPowerAudio(void) {
-    if (autoPowerOn) {
-        if (current_state && previous_state) {
-            digitalWrite(POWER_RELAY, LOW);
-
-            current_state  = 0;
-            previous_state = 0;
-        }
-    }
+void powerDownAudio(void) {
+    digitalWrite(POWER_RELAY, LOW);
 }
 
 void checkCommand(void) {
-    int is_received = cmdBuffer.readFromSerial(&Serial, 30000);
+    int is_received = cmdBuffer.readFromSerial(&Serial, 1000);
 
     if (is_received) {
         if (cmdParser.parseCmd(cmdBuffer.getStringFromBuffer()) != CMDPARSER_ERROR) {
@@ -113,7 +124,7 @@ void checkCommand(void) {
                 }
             }
             /*
-             * Command sample = SET IP="0001" BLUETOOTH="on" AUDIO_OUTPUT="ext" POWER="auto"
+             * Command sample = SET IP="0001" BLUETOOTH="off" AUDIO_OUTPUT="ext" POWER="off"
              *                  GET IP="0001" TO="0000"
              * */
             if (cmdParser.equalCommand_P(PSTR("GET"))) {
@@ -172,6 +183,8 @@ void bluetoothState(String state) {
 }
 
 void audioState(String state) {
+    digitalWrite(POWER_RELAY, LOW);
+    delay(500);
     if (state == "int") {
         digitalWrite(SOUND_SELECTION_A, HIGH);
         digitalWrite(SOUND_SELECTION_B, LOW);
@@ -182,6 +195,8 @@ void audioState(String state) {
         digitalWrite(SOUND_SELECTION_A, LOW);
         digitalWrite(SOUND_SELECTION_B, HIGH);
     }
+    delay(500);
+    digitalWrite(POWER_RELAY, HIGH);
 
 }
 
