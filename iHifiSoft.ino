@@ -13,6 +13,8 @@
 CmdBuffer<128> cmdBuffer;
 CmdParser cmdParser;
 
+#define DEBUG 0
+
 #define SOUND_SELECTION_A 6
 #define SOUND_SELECTION_B 7
 #define POWER_RELAY 8
@@ -70,9 +72,11 @@ void loop() {
             delay(5);
         }
 
-        Serial.print(x);
-        Serial.print("   ");
-        Serial.println(y);
+        if (DEBUG) {
+            Serial.print(x);
+            Serial.print("   ");
+            Serial.println(y);
+        }
 
         if (x >= 5 || y >= 5) {
             previousState = 0;
@@ -123,6 +127,9 @@ void checkCommand(void) {
                     powerState(cmdParser.getValueFromKey_P(PSTR("POWER")));
                 }
             }
+
+            // TODO : Change command syntax on IP selection
+
             /*
              * Command sample = SET IP="0001" BLUETOOTH="off" AUDIO_OUTPUT="ext" POWER="off"
              *                  GET IP="0001" TO="0000"
